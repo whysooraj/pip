@@ -1,0 +1,1 @@
+Fix fish shell completion script when invoked via ``python -m pip`` or on Windows by emitting a valid command name for ``complete -c`` and stripping trailing carriage returns from completion output.

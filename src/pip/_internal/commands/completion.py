@@ -50,7 +50,9 @@ COMPLETION_SCRIPTS = {
             else
                 set completions ($COMP_WORDS[1])
             end
-            string split \\  -- $completions
+            if set -q completions[1]
+                string trim -r -c \\r -- $completions | string split " "
+            end
         end
         complete -fa "(__fish_complete_pip)" -c {prog}
     """,
@@ -77,6 +79,18 @@ COMPLETION_SCRIPTS = {
         }}
     """,
 }
+
+
+def _get_fish_prog(prog: str) -> str:
+    """Return a command name suitable for fish's ``complete -c``."""
+    # When invoked via ``python -m pip`` (including Windows Store aliases),
+    # ``get_prog()`` returns ``"<executable> -m pip"``, which is invalid for
+    # ``complete -c``.
+    if not prog or prog.endswith(" -m pip"):
+        return "pip"
+    if prog.lower().endswith(".exe"):
+        return prog[:-4] or "pip"
+    return prog
 
 
 class CompletionCommand(Command):
@@ -127,8 +141,11 @@ class CompletionCommand(Command):
         shells = COMPLETION_SCRIPTS.keys()
         shell_options = ["--" + shell for shell in sorted(shells)]
         if options.shell in shells:
+            prog = get_prog()
+            if options.shell == "fish":
+                prog = _get_fish_prog(prog)
             script = textwrap.dedent(
-                COMPLETION_SCRIPTS.get(options.shell, "").format(prog=get_prog())
+                COMPLETION_SCRIPTS.get(options.shell, "").format(prog=prog)
             )
             print(BASE_COMPLETION.format(script=script, shell=options.shell))
             return SUCCESS
