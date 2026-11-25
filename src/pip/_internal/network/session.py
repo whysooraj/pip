@@ -34,7 +34,7 @@ from pip._vendor.urllib3.connectionpool import ConnectionPool
 from pip._vendor.urllib3.exceptions import InsecureRequestWarning
 
 from pip import __version__
-from pip._internal.exceptions import SSLMissingError
+from pip._internal.exceptions import ResponseDecodingError, SSLMissingError
 from pip._internal.metadata import get_default_environment
 from pip._internal.models.link import Link
 from pip._internal.network.auth import MultiDomainBasicAuth
@@ -547,6 +547,10 @@ class PipSession(requests.Session):
             request = getattr(e, "request", None)
             failed_url = getattr(request, "url", None) or url
             raise_connection_error(e, url=failed_url, timeout=kwargs["timeout"])
+        except requests.exceptions.ContentDecodingError as e:
+            request = getattr(e, "request", None)
+            failed_url = getattr(request, "url", None) or url
+            raise ResponseDecodingError(redact_auth_from_url(failed_url), e) from e
         except ImportError as e:
             if "ssl" in str(e).lower():
                 # Unfortunately, if this TLS error was the result of a redirect from

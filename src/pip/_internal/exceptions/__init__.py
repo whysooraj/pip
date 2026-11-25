@@ -57,6 +57,7 @@ from pip._internal.exceptions.network import (
     IncompleteDownloadError,
     NetworkConnectionError,
     ProxyConnectionError,
+    ResponseDecodingError,
     SSLMissingError,
     SSLVerificationError,
 )
@@ -106,6 +107,7 @@ __all__ = [
     "IncompleteDownloadError",
     "NetworkConnectionError",
     "ProxyConnectionError",
+    "ResponseDecodingError",
     "SSLMissingError",
     "SSLVerificationError",
     # pyproject

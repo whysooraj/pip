@@ -8,6 +8,7 @@ from pip._internal.exceptions import (
     ConnectionTimeoutError,
     NetworkConnectionError,
     ProxyConnectionError,
+    ResponseDecodingError,
     SSLVerificationError,
 )
 from pip._internal.network.utils import raise_connection_error, raise_for_status
@@ -179,3 +180,20 @@ def test_ssl_verification_error_details_do_not_escape_text() -> None:
     assert error.context is not None
     context = render_to_text(error.context).rstrip()
     assert context == "[ssl: certificate_verify_failed] bad"
+
+
+def test_response_decoding_error_single_arg_decode_error() -> None:
+    """Single-argument urllib3 DecodeError should format without parentheses."""
+    url = "https://example.com/[beta]/simple/pkg/"
+    error = ResponseDecodingError(
+        url,
+        requests.exceptions.ContentDecodingError(
+            urllib3.exceptions.DecodeError("Zstandard data is incomplete")
+        ),
+    )
+
+    message = render_to_text(error.message).rstrip()
+    assert message == f"Failed to decode response while fetching {url}"
+    assert error.context is not None
+    context = render_to_text(error.context).rstrip()
+    assert context == "Zstandard data is incomplete"

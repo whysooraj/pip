@@ -157,6 +157,40 @@ class ProxyConnectionError(DiagnosticPipError):
         )
 
 
+class ResponseDecodingError(DiagnosticPipError):
+    reference = "response-decoding-failed"
+
+    def __init__(self, url: str, error: Exception) -> None:
+        from pip._vendor.requests.exceptions import ContentDecodingError
+        from pip._vendor.urllib3.exceptions import DecodeError
+
+        decode_error: Exception = error
+        if (
+            isinstance(error, ContentDecodingError)
+            and error.args
+            and isinstance(error.args[0], DecodeError)
+        ):
+            decode_error = error.args[0]
+
+        if isinstance(decode_error, DecodeError) and len(decode_error.args) == 2:
+            details = f"{decode_error.args[0]} ({decode_error.args[1]})"
+        else:
+            details = str(decode_error)
+
+        super().__init__(
+            message=f"Failed to decode response while fetching {escape(url)}",
+            context=Text(details),
+            note_stmt=(
+                "This is an issue with the remote server or network connection, "
+                "not pip."
+            ),
+            hint_stmt=(
+                "The response may have been corrupted in transit or sent with "
+                "an invalid Content-Encoding header by the server or a proxy."
+            ),
+        )
+
+
 class IncompleteDownloadError(DiagnosticPipError):
     """Raised when the downloader receives fewer bytes than advertised
     in the Content-Length header."""

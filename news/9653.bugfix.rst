@@ -1,0 +1,1 @@
+Raise a diagnostic ``ResponseDecodingError`` instead of an unhandled ``ContentDecodingError`` traceback when decoding a corrupted compressed HTTP response fails.

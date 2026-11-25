@@ -29,6 +29,7 @@ from pip._internal.exceptions import (
     ConnectionTimeoutError,
     DiagnosticPipError,
     ProxyConnectionError,
+    ResponseDecodingError,
     SSLMissingError,
     SSLVerificationError,
 )
@@ -74,6 +75,20 @@ class DelayedHTTPHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
 
+class CorruptedGzipHTTPHandler(BaseHTTPRequestHandler):
+    def do_GET(self) -> None:
+        body = b"not valid gzip data"
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html")
+        self.send_header("Content-Encoding", "gzip")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, format: str, *args: object) -> None:
+        pass
+
+
 @pytest.fixture(scope="module")
 def instant_close_server() -> Iterator[Address]:
     with HTTPServer(("127.0.0.1", 0), InstantCloseHTTPHandler) as server:
@@ -84,6 +99,13 @@ def instant_close_server() -> Iterator[Address]:
 @pytest.fixture(scope="module")
 def delayed_server() -> Iterator[Address]:
     with HTTPServer(("127.0.0.1", 0), DelayedHTTPHandler) as server:
+        with server_running(server):
+            yield Address("127.0.0.1", server.server_port)
+
+
+@pytest.fixture(scope="module")
+def corrupted_gzip_server() -> Iterator[Address]:
+    with HTTPServer(("127.0.0.1", 0), CorruptedGzipHTTPHandler) as server:
         with server_running(server):
             yield Address("127.0.0.1", server.server_port)
 
@@ -677,6 +699,54 @@ class TestConnectionErrors:
             "Failed to connect to example.com while fetching "
             "https://example.com/final"
         )
+
+    def test_corrupted_gzip_response(
+        self, session: PipSession, corrupted_gzip_server: Address
+    ) -> None:
+        url = corrupted_gzip_server.url
+        with pytest.raises(ResponseDecodingError) as e:
+            session.get(url)
+        message, context = render_diagnostic_error(e.value)
+        assert message == f"Failed to decode response while fetching {url}"
+        assert context is not None
+        assert context.startswith(
+            "Received response with content-encoding: gzip, but failed to decode it. ("
+        )
+        assert "incorrect header check" in context
+        assert e.value.note_stmt is not None
+        assert e.value.hint_stmt is not None
+        assert isinstance(e.value.__cause__, requests.exceptions.ContentDecodingError)
+
+    def test_corrupted_response_redacts_auth_and_uses_failed_request_url(
+        self, monkeypatch: pytest.MonkeyPatch, session: PipSession
+    ) -> None:
+        failed_request = requests.Request(
+            "GET", "https://user:password@example.com/final/simple/"
+        ).prepare()
+
+        def request(
+            self: requests.Session,
+            method: str,
+            url: str,
+            *args: object,
+            **kwargs: object,
+        ) -> None:
+            raise requests.exceptions.ContentDecodingError(
+                "decoding failed [raw]", request=failed_request
+            )
+
+        monkeypatch.setattr(requests.Session, "request", request)
+
+        with pytest.raises(ResponseDecodingError) as e:
+            session.get("https://user:password@example.com/start")
+
+        message, context = render_diagnostic_error(e.value)
+        assert message == (
+            "Failed to decode response while fetching "
+            "https://user:****@example.com/final/simple/"
+        )
+        assert "password" not in message
+        assert context == "decoding failed [raw]"
 
     @pytest.mark.network
     def test_broken_proxy(self, session: PipSession) -> None:
